@@ -83,7 +83,10 @@ For a more complex layout use the **scoped slot**
 | buttonDecline | false | Boolean | Display decline button
 | buttonDeclineText | 'Decline' | String | 🔘Decline button text
 | buttonDeclineClass | 'Cookie__declineButton' | String | Custom class name for decline button
-
+| cookieTypes | '{ id: 'necessary', required: true, label: 'Strictly necessary' }' | Object | Types of cookies the website uses. Items marked as required cannot be unchecked
+| cookieTypeCheckboxClass | None | String | Custom css class for the checkboxes
+| timeout | 0 | Number | The number of ms after which the cookie banner is closed and accepts only the selected cookie types. Set 0 if you don't want to use a timeout
+| maxConsentAge | '1M' | String | A number and the time unit type ('Y': year, 'M': month, 'D': day, 'h': hour, 'm': minute, 's': second) for which the consent remains valid
 
 ## Events
 

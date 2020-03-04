@@ -3,7 +3,23 @@
     <div class="Cookie" :class="[containerPosition, cookieTheme]" v-if="isOpen">
       <slot :accept="accept" :close="close" :decline="decline" :open="open">
         <div class="Cookie__content">
-          <slot name="message">{{ message }}</slot>
+          <slot name="message">
+            {{ message }}
+          </slot>
+          <slot name="cookieTypes">
+            <div class="cl-mt-6" v-if="cookieTypes">
+              <span v-for="cookieType in cookieTypes" :key="cookieType.id">
+                <input type="checkbox" 
+                       :id="'ct-' + cookieType.id" 
+                       :ref="'ct-' + cookieType.id" 
+                       :value="cookieType.label" 
+                       v-model="cookieTypesSelected[cookieType.id]" 
+                       :disabled="cookieType.required"
+                       :class="cookieTypeCheckboxClass">
+                <label :for="'ct-' + cookieType.id">{{ cookieType.label }}</label>
+              </span>
+            </div>
+          </slot>
         </div>
         <div class="Cookie__buttons">
           <a :target="target" :href="buttonLink" v-if="externalButtonLink" :class="buttonClass">{{ buttonLinkText }}</a>
@@ -22,6 +38,15 @@
   const STORAGE_TYPES = {
     local: 'localStorage',
     cookies: 'cookies'
+  }
+
+  const CONSENT_AGE_MULTIPLIER = {
+    's': 1000,
+    'm': 60 * 1000,
+    'h': 60 * 60 * 1000,
+    'D': 24 * 60 * 60 * 1000,
+    'M': 30 * 24 * 60 * 60 * 1000,
+    'Y': 365 * 24 * 60 * 60 * 1000
   }
 
   export default {
@@ -59,6 +84,15 @@
         type: String,
         default: 'base'
       },
+      cookieTypes: {
+        type: Array,
+        default: [
+          { id: 'necessary', required: true, label: 'Strictly necessary' }
+        ]
+      },
+      cookieTypeCheckboxClass: {
+        type: String
+      },
       /**
        * Cookie Container position
        * bottom, top
@@ -89,7 +123,7 @@
       },
       storageName: {
         type: String,
-        default: 'cookie:accepted'
+        default: 'cookie:visited'
       },
       storageType: {
         type: String,
@@ -99,12 +133,21 @@
         type: Object,
         default: () => {},
         required: false
+      },
+      timeout: {
+        type: Number,
+        default: 0
+      },
+      maxConsentAge: {
+        type: String,
+        default: '1M'
       }
     },
     data () {
       return {
         supportsLocalStorage: true,
-        isOpen: false
+        isOpen: false,
+        cookieTypesSelected: {}
       }
     },
     computed: {
@@ -141,37 +184,61 @@
         }
       }
 
-      if (!this.getVisited() === true) {
+      const consentAge = new Date() - this.getVisited()
+      const maxConsentAge = this.getMaxConsentAgeInMs()
+      if (consentAge > maxConsentAge) {
         this.isOpen = true
+      }
+
+      if (this.cookieTypes) {
+        this.cookieTypes.forEach((cookieType) => {
+          this.cookieTypesSelected[cookieType.id] = cookieType.required
+        })
+      }
+
+      if (this.timeout > 0) {
+        setTimeout(() => this.decline(), this.timeout)
       }
     },
     methods: {
+      getMaxConsentAgeInMs () {
+        const maxConsentAgeDimension = this.maxConsentAge.charAt(this.maxConsentAge.length - 1)
+        const maxConsentAgeMultiplier = CONSENT_AGE_MULTIPLIER[maxConsentAgeDimension]
+        const maxConsentAgeValue = Number(this.maxConsentAge.substring(0, this.maxConsentAge.length - 1))
+
+        return maxConsentAgeValue * maxConsentAgeMultiplier
+      },
       setVisited () {
         if (this.canUseLocalStorage) {
-          localStorage.setItem(this.storageName, true)
+          localStorage.setItem(this.storageName, (new Date()).toISOString())
         } else {
-          Cookie.set(this.storageName, true, { ...this.cookieOptions, expires: '1Y' })
+          Cookie.set(this.storageName, (new Date()).toISOString(), { ...this.cookieOptions, expires: this.maxConsentAge })
         }
       },
       setAccepted () {
+        const acceptedCookieTypes = this.cookieTypes.map((cookieType) => `cookie:${cookieType.id}`)
         if (this.canUseLocalStorage) {
-          localStorage.setItem('cookie:all', true)
+          acceptedCookieTypes.forEach((cookieType) => localStorage.setItem(cookieType, true))
         } else {
-          Cookie.set('cookie:all', true, { ...this.cookieOptions, expires: '1Y' })
+          acceptedCookieTypes.forEach((cookieType) => Cookie.set(cookieType, true, { ...this.cookieOptions, expires: this.maxConsentAge }))
         }
       },
       setDeclined () {
+        const cookieTypeSettings = Object.keys(this.cookieTypesSelected).map((cookieTypeKey) => {
+          return { name: `cookie:${cookieTypeKey}`, status: this.cookieTypesSelected[cookieTypeKey] }
+        })
+
         if (this.canUseLocalStorage) {
-          localStorage.setItem('cookie:all', false)
+          cookieTypeSettings.forEach((cookieTypeSetting) => localStorage.setItem(cookieTypeSetting.name, cookieTypeSetting.status))
         } else {
-          Cookie.set('cookie:all', false, { ...this.cookieOptions, expires: '1Y' })
+          cookieTypeSettings.forEach((cookieTypeSetting) => Cookie.set(cookieTypeSetting.name, cookieTypeSetting.status, { ...this.cookieOptions, expires: this.maxConsentAge }))
         }
       },
       getVisited () {
         if (this.canUseLocalStorage) {
-          return localStorage.getItem(this.storageName)
+          return new Date(localStorage.getItem(this.storageName))
         } else {
-          return Cookie.get(this.storageName)
+          return new Date(Cookie.get(this.storageName))
         }
       },
       accept () {
@@ -201,6 +268,10 @@
 
 <style lang="scss">
   @import "~@nextindex/next-scss/next-scss.scss";
+
+  .cl-mt-6 {
+    margin-top: 6px;
+  }
 
   .Cookie {
     position: fixed;
@@ -284,9 +355,9 @@
           }
       }
       .Cookie__declineButton {
-          background: transparent;
+          background: darken($backgroundColor, 25%);
           padding: 0.625em 3.125em;
-          color: darken($backgroundColor, 50%);
+          color: $buttonFontColor;
           border-radius: $buttonRadius;
           border: 0;
           font-size: 1em;
@@ -306,6 +377,7 @@
   @include generateTheme('dark-lime--rounded', #424851, #fff, #97D058, #fff, 20px);
   @include generateTheme('royal', #FBC227, #232323, #726CEA, #fff);
   @include generateTheme('royal--rounded', #FBC227, #232323, #726CEA, #fff, 20px);
+  @include generateTheme('website--rounded', #FFAA00, #232323, #181818, #fff, 20px);
 
   .slideFromTop-enter, .slideFromTop-leave-to {
     transform: translate(0px, -12.500em);
